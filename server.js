@@ -17,7 +17,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // =========================================================================
 // EMAIL CONFIGURATION
 // =========================================================================
-const EMAIL_USER = process.env.EMAIL_USER || "adminceconnect@gmail.com";
+const EMAIL_USER = process.env.EMAIL_USER || "mayank.shukla131871@marwadiuniversity.ac.in";
 const EMAIL_PASS = process.env.EMAIL_PASS || "ymyx muwi gtgy dsec";
 
 const transporter = nodemailer.createTransport({
