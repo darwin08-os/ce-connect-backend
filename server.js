@@ -3,7 +3,7 @@ const mysql      = require("mysql2");
 const bodyParser = require("body-parser");
 const multer     = require("multer");
 const cors       = require("cors");
-const nodemailer = require("nodemailer");
+const axios      = require("axios");
 
 const app = express();
 
@@ -15,17 +15,46 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // =========================================================================
-// EMAIL CONFIGURATION
+// EMAILJS CONFIGURATION (HTTP API)
 // =========================================================================
-const EMAIL_USER = process.env.EMAIL_USER || "mayank.shukla131871@marwadiuniversity.ac.in";
-const EMAIL_PASS = process.env.EMAIL_PASS || "ymyx muwi gtgy dsec";
+const EMAILJS_SERVICE_ID  = process.env.EMAILJS_SERVICE_ID  || "service_2827kk4";
+const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID || "template_rqv959g";
+const EMAILJS_PUBLIC_KEY  = process.env.EMAILJS_PUBLIC_KEY;
+const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
 
-const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
-});
+/** Helper to send OTP via EmailJS API */
+async function sendOTPEmail(email, otp) {
+  const expiryDate = new Date(Date.now() + 15 * 60 * 1000);
+  const timeString = expiryDate.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  const payload = {
+    service_id: EMAILJS_SERVICE_ID,
+    template_id: EMAILJS_TEMPLATE_ID,
+    user_id: EMAILJS_PUBLIC_KEY,
+    accessToken: EMAILJS_PRIVATE_KEY,
+    template_params: {
+      email: email,       // Matches {{email}} in "To Email"
+      passcode: otp,      // Matches {{passcode}} in email body
+      time: timeString,   // Matches {{time}} in email body
+    },
+  };
+
+  const response = await axios.post(
+    "https://api.emailjs.com/api/v1.0/email/send",
+    payload,
+    {
+      headers: { "Content-Type": "application/json" },
+    }
+  );
+
+  return response.data;
+}
+
+// (Delete duplicate sendOtpEmail function)
 
 // =========================================================================
 // DATABASE CONNECTION (TiDB Cloud / Local MySQL)
@@ -80,61 +109,6 @@ function isValidMarwadiEmail(email) {
     return /^[^@\s]+@marwadiuniversity\.[^\s]+$/i.test(email.trim());
 }
 
-/** Send OTP email */
-async function sendOTPEmail(email, otp) {
-    const mailOptions = {
-        from: `"CE Connect" <${EMAIL_USER}>`,
-        to: email,
-        subject: "CE Connect — Your Faculty Registration OTP",
-        html: `
-        <!DOCTYPE html>
-        <html>
-        <body style="margin:0;padding:0;background:#060c1a;font-family:Arial,sans-serif;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr><td align="center" style="padding:40px 20px;">
-              <table width="520" cellpadding="0" cellspacing="0"
-                style="background:#0d1834;border-radius:16px;border:1px solid rgba(59,130,246,0.3);overflow:hidden;">
-                <tr>
-                  <td style="background:linear-gradient(135deg,#1d4ed8,#0891b2);padding:28px 36px;">
-                    <span style="font-size:22px;font-weight:900;color:#fff;letter-spacing:-0.5px;">CE Connect</span>
-                    <span style="display:block;font-size:12px;color:rgba(255,255,255,0.7);margin-top:4px;text-transform:uppercase;letter-spacing:1px;">
-                      Computer Engineering Department
-                    </span>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:36px;">
-                    <h2 style="margin:0 0 10px;color:#f0f6ff;font-size:20px;">Verify Your Email Address</h2>
-                    <p style="margin:0 0 28px;color:#94a3b8;font-size:14px;line-height:1.7;">
-                      Use the OTP below to complete your Faculty Registration or Request For Posting on CE Connect.
-                      This code is valid for <strong style="color:#60a5fa;">10 minutes</strong>.
-                    </p>
-                    <div style="background:#1a2744;border:2px solid #3b82f6;border-radius:12px;padding:28px;text-align:center;margin-bottom:28px;">
-                      <span style="display:block;font-size:11px;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Your One-Time Password</span>
-                      <span style="font-size:40px;font-weight:900;letter-spacing:14px;color:#60a5fa;font-family:'Courier New',monospace;">${otp}</span>
-                    </div>
-                    <p style="margin:0;color:#64748b;font-size:12px;line-height:1.6;">
-                      If you did not request this code, you can safely ignore this email.<br/>
-                      Do not share this OTP with anyone.
-                    </p>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:20px 36px;border-top:1px solid rgba(255,255,255,0.06);">
-                    <span style="color:#475569;font-size:11px;">
-                      © 2026 CE Connect · Marwadi University Department of Computer Engineering
-                    </span>
-                  </td>
-                </tr>
-              </table>
-            </td></tr>
-          </table>
-        </body>
-        </html>
-        `,
-    };
-    await transporter.sendMail(mailOptions);
-}
 
 // =========================================================================
 // 1. PUBLIC LANDING PAGE API
@@ -762,5 +736,5 @@ app.get("/admin/analytics", (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`CE Connect Backend running on port ${PORT}`);
-    console.log(`Email configured for: ${EMAIL_USER}`);
+    console.log(`EmailJS Service ID: ${EMAILJS_SERVICE_ID}`);
 });
