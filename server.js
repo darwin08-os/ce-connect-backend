@@ -54,8 +54,6 @@ async function sendOTPEmail(email, otp) {
   return response.data;
 }
 
-// (Delete duplicate sendOtpEmail function)
-
 // =========================================================================
 // DATABASE CONNECTION (TiDB Cloud / Local MySQL)
 // =========================================================================
@@ -95,7 +93,7 @@ const upload  = multer({ storage: storage });
 const otpStore = new Map();
 
 // =========================================================================
-// HELPERS
+// VALIDATION HELPERS
 // =========================================================================
 
 /** Generate a secure 6-digit OTP */
@@ -109,14 +107,46 @@ function isValidMarwadiEmail(email) {
     return /^[^@\s]+@marwadiuniversity\.[^\s]+$/i.test(email.trim());
 }
 
+/** Validate Faculty Email (.edu.in) */
+function isFacultyEmail(email) {
+    if (!email) return false;
+    return /^[^@\s]+@marwadiuniversity\.edu\.in$/i.test(email.trim());
+}
+
+/** Validate Student Email (.ac.in) */
+function isStudentEmail(email) {
+    if (!email) return false;
+    return /^[^@\s]+@marwadiuniversity\.ac\.in$/i.test(email.trim());
+}
+
+/** Validate Name (Alphabets and spaces only) */
+function isValidName(name) {
+    if (!name) return false;
+    return /^[a-zA-Z\s]{2,100}$/.test(name.trim());
+}
+
+/** Validate 5-digit Numeric ID (GR No or Faculty University ID) */
+function isValid5DigitId(id) {
+    if (!id) return false;
+    return /^\d{1,5}$/.test(String(id).trim());
+}
+
+/** Validate 11-digit Enrollment Number */
+function isValidEnrollmentNo(enroll) {
+    if (!enroll) return false;
+    return /^\d{1,11}$/.test(String(enroll).trim());
+}
+
+/** Validate 10-digit Indian Mobile */
+function isValidIndianPhone(phone) {
+    if (!phone) return false;
+    return /^[6-9]\d{9}$/.test(String(phone).trim());
+}
 
 // =========================================================================
 // 1. PUBLIC LANDING PAGE API
 // =========================================================================
 
-/**
- * FETCH ALL LIVE POSTS (Includes category support)
- */
 app.get("/posts", (req, res) => {
     const sql = `
         SELECT p.post_id, p.title, p.post_description, p.category, p.banner_data, p.banner_name, 
@@ -148,23 +178,28 @@ app.get("/posts", (req, res) => {
 // 2. STUDENT PIPELINE API
 // =========================================================================
 
-/**
- * SUBMIT POST REQUEST (Includes student category choice)
- */
 app.post("/student/request", upload.single("banner_file"), (req, res) => {
     const { enrollment_no, gr_no, email, phone, name, title, description, category } = req.body;
 
-    if (!isValidMarwadiEmail(email)) {
-        return res.status(400).json({
-            error: "Invalid email. Students and alumni must use a @marwadiuniversity domain email.",
-        });
+    if (!isValidEnrollmentNo(enrollment_no)) {
+        return res.status(400).json({ error: "Enrollment Number must contain only numbers and be up to 11 digits." });
+    }
+    if (!isValid5DigitId(gr_no)) {
+        return res.status(400).json({ error: "GR Number must contain only numbers and be up to 5 digits." });
+    }
+    if (!isValidName(name)) {
+        return res.status(400).json({ error: "Full Name must contain only alphabets and spaces." });
+    }
+    if (!isStudentEmail(email)) {
+        return res.status(400).json({ error: "Student requests require an official @marwadiuniversity.ac.in email address." });
+    }
+    if (!isValidIndianPhone(phone)) {
+        return res.status(400).json({ error: "Phone number must be a valid 10-digit Indian mobile number." });
     }
 
     const otpRecord = otpStore.get(email);
     if (!otpRecord || !otpRecord.verified) {
-        return res.status(403).json({
-            error: "Email OTP verification required before submitting a post request.",
-        });
+        return res.status(403).json({ error: "Email OTP verification required before submitting a post request." });
     }
 
     if (otpRecord.verifiedAt && (Date.now() - otpRecord.verifiedAt) > 15 * 60 * 1000) {
@@ -200,7 +235,7 @@ app.post("/faculty/send-otp", async (req, res) => {
 
     if (!isValidMarwadiEmail(email)) {
         return res.status(400).json({
-            error: "Invalid email. Must be from @marwadiuniversity domain (e.g. @marwadiuniversity.edu.in or @marwadiuniversity.ac.in).",
+            error: "Invalid email. Must be from @marwadiuniversity domain.",
         });
     }
 
@@ -243,7 +278,7 @@ app.post("/faculty/send-otp", async (req, res) => {
         console.error("Email send error:", emailErr.message);
         otpStore.delete(email);
         res.status(500).json({
-            error: "Failed to send OTP email. Please check the server EMAIL configuration in server.js.",
+            error: "Failed to send OTP email. Please check the server EMAIL configuration.",
         });
     }
 });
@@ -299,7 +334,7 @@ app.post("/faculty/verify-otp", (req, res) => {
     record.verifiedAt = Date.now();
     otpStore.set(email, record);
 
-    res.status(200).json({ message: "Email verified successfully! Proceeding with registration." });
+    res.status(200).json({ message: "Email verified successfully! Proceeding." });
 });
 
 // =========================================================================
@@ -309,8 +344,17 @@ app.post("/faculty/verify-otp", (req, res) => {
 app.post("/faculty/register", upload.single("profile_pic"), (req, res) => {
     const { university_id, full_name, role, phone_number, email, password, dob } = req.body;
 
-    if (!isValidMarwadiEmail(email)) {
-        return res.status(400).json({ error: "Email must be from @marwadiuniversity domain." });
+    if (!isValid5DigitId(university_id)) {
+        return res.status(400).json({ error: "University ID must contain only numbers and be up to 5 digits." });
+    }
+    if (!isValidName(full_name)) {
+        return res.status(400).json({ error: "Full Name must contain only alphabets and spaces." });
+    }
+    if (!isFacultyEmail(email)) {
+        return res.status(400).json({ error: "Faculty onboarding requires an official @marwadiuniversity.edu.in email address." });
+    }
+    if (!isValidIndianPhone(phone_number)) {
+        return res.status(400).json({ error: "Phone number must be a valid 10-digit Indian mobile number." });
     }
 
     const otpRecord = otpStore.get(email);
@@ -334,7 +378,7 @@ app.post("/faculty/register", upload.single("profile_pic"), (req, res) => {
     connection.query(sql, [university_id, full_name, role, picData, picName, phone_number, email, password, dob], (err) => {
         if (err) {
             console.error("Registration error:", err);
-            return res.status(500).json({ error: "Registration failed. ID or email might already exist." });
+            return res.status(500).json({ error: "Registration failed. University ID or email might already exist." });
         }
         otpStore.delete(email);
         res.status(201).json({ message: "Faculty profile registered successfully!" });
@@ -344,8 +388,8 @@ app.post("/faculty/register", upload.single("profile_pic"), (req, res) => {
 app.post("/faculty/login", (req, res) => {
     const { email, password } = req.body;
 
-    if (!isValidMarwadiEmail(email)) {
-        return res.status(400).json({ error: "Invalid email. Must be from @marwadiuniversity domain." });
+    if (!isFacultyEmail(email)) {
+        return res.status(400).json({ error: "Faculty login requires an official @marwadiuniversity.edu.in email address." });
     }
 
     const sql = "SELECT university_id, full_name, role FROM uploader WHERE university_email = ? AND password_hash = ?";
@@ -362,9 +406,6 @@ app.post("/faculty/login", (req, res) => {
     });
 });
 
-/**
- * CREATE DIRECT POST (FACULTY) - Includes Category
- */
 app.post("/faculty/direct-post", upload.single("banner_file"), (req, res) => {
     const { uploader_id, title, description, category } = req.body;
     const bannerData = req.file ? req.file.buffer : null;
@@ -385,9 +426,6 @@ app.post("/faculty/direct-post", upload.single("banner_file"), (req, res) => {
     });
 });
 
-/**
- * REJECT STUDENT REQUEST
- */
 app.post("/faculty/reject/:requestId", (req, res) => {
     const { requestId } = req.params;
     const sql = "UPDATE student_post_request SET status = 'rejected' WHERE request_id = ?";
@@ -400,9 +438,6 @@ app.post("/faculty/reject/:requestId", (req, res) => {
     });
 });
 
-/**
- * DELETE LIVE POST
- */
 app.delete("/faculty/delete-post/:postId", (req, res) => {
     const { postId } = req.params;
     const sql = "DELETE FROM post WHERE post_id = ?";
@@ -416,12 +451,9 @@ app.delete("/faculty/delete-post/:postId", (req, res) => {
 });
 
 // =========================================================================
-// 5. FACULTY DASHBOARD PIPELINE (APPROVAL SYSTEM)
+// 5. FACULTY DASHBOARD PIPELINE
 // =========================================================================
 
-/**
- * GET PENDING REQUESTS (Includes Category)
- */
 app.get("/faculty/pending-requests", (req, res) => {
     const sql = "SELECT * FROM student_post_request WHERE status = 'pending' ORDER BY created_at DESC";
     connection.query(sql, (err, results) => {
@@ -444,10 +476,6 @@ app.get("/faculty/pending-requests", (req, res) => {
     });
 });
 
-/**
- * APPROVE STUDENT REQUEST
- * Supports category editing by faculty during approval
- */
 app.post("/faculty/approve/:requestId", (req, res) => {
     const { requestId }   = req.params;
     const { uploader_id, category } = req.body;
@@ -458,7 +486,6 @@ app.post("/faculty/approve/:requestId", (req, res) => {
             return res.status(404).json({ error: "Target request application not found" });
         }
         const requestData = results[0];
-
         const finalCategory = category || requestData.category || 'General';
 
         const insertPostSql = `
@@ -494,9 +521,6 @@ app.post("/faculty/approve/:requestId", (req, res) => {
 // 6. ADMIN PANEL API
 // =========================================================================
 
-/**
- * ADMIN LOGIN
- */
 app.post("/admin/login", (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -516,9 +540,6 @@ app.post("/admin/login", (req, res) => {
     });
 });
 
-/**
- * GET ALL FACULTY
- */
 app.get("/admin/faculty", (req, res) => {
     const sql = "SELECT university_id, full_name, role, university_email, phone_number, dob, profile_picture_data, profile_picture_name FROM uploader ORDER BY full_name ASC";
     connection.query(sql, (err, results) => {
@@ -539,14 +560,25 @@ app.get("/admin/faculty", (req, res) => {
     });
 });
 
-/**
- * ADD FACULTY (Admin bypass - no OTP required)
- */
 app.post("/admin/faculty/add", upload.single("profile_pic"), (req, res) => {
     const { university_id, full_name, role, phone_number, email, password, dob } = req.body;
-    if (!university_id || !full_name || !email || !password) {
-        return res.status(400).json({ error: "university_id, full_name, email and password are required." });
+    
+    if (!isValid5DigitId(university_id)) {
+        return res.status(400).json({ error: "University ID must contain only numbers and be up to 5 digits." });
     }
+    if (!isValidName(full_name)) {
+        return res.status(400).json({ error: "Full Name must contain only alphabets and spaces." });
+    }
+    if (!isFacultyEmail(email)) {
+        return res.status(400).json({ error: "Faculty email must be from @marwadiuniversity.edu.in domain." });
+    }
+    if (!password) {
+        return res.status(400).json({ error: "Password is required." });
+    }
+    if (phone_number && !isValidIndianPhone(phone_number)) {
+        return res.status(400).json({ error: "Phone number must be a valid 10-digit Indian mobile number." });
+    }
+
     const picData = req.file ? req.file.buffer : null;
     const picName = req.file ? req.file.originalname : null;
     const sql = `
@@ -557,15 +589,12 @@ app.post("/admin/faculty/add", upload.single("profile_pic"), (req, res) => {
     connection.query(sql, [university_id, full_name, role || 'Faculty', picData, picName, phone_number, email, password, dob], (err) => {
         if (err) {
             console.error("Admin add faculty error:", err);
-            return res.status(500).json({ error: "Failed to add faculty. ID or email might already exist." });
+            return res.status(500).json({ error: "Failed to add faculty. University ID or email might already exist." });
         }
         res.status(201).json({ message: "Faculty member added successfully!" });
     });
 });
 
-/**
- * DELETE FACULTY
- */
 app.delete("/admin/faculty/:id", (req, res) => {
     const { id } = req.params;
     const sql = "DELETE FROM uploader WHERE university_id = ?";
@@ -581,9 +610,6 @@ app.delete("/admin/faculty/:id", (req, res) => {
     });
 });
 
-/**
- * GET ALL POSTS (Admin - includes all metadata)
- */
 app.get("/admin/posts", (req, res) => {
     const sql = `
         SELECT p.post_id, p.title, p.post_description, p.category, p.banner_data, p.banner_name,
@@ -614,9 +640,6 @@ app.get("/admin/posts", (req, res) => {
     });
 });
 
-/**
- * DELETE POST (Admin)
- */
 app.delete("/admin/posts/:id", (req, res) => {
     const { id } = req.params;
     const sql = "DELETE FROM post WHERE post_id = ?";
@@ -632,9 +655,6 @@ app.delete("/admin/posts/:id", (req, res) => {
     });
 });
 
-/**
- * GET ALL STUDENT REQUESTS (Admin - all statuses)
- */
 app.get("/admin/requests", (req, res) => {
     const sql = "SELECT * FROM student_post_request ORDER BY created_at DESC";
     connection.query(sql, (err, results) => {
@@ -657,9 +677,6 @@ app.get("/admin/requests", (req, res) => {
     });
 });
 
-/**
- * DELETE STUDENT REQUEST (Admin)
- */
 app.delete("/admin/requests/:id", (req, res) => {
     const { id } = req.params;
     const sql = "DELETE FROM student_post_request WHERE request_id = ?";
@@ -675,9 +692,6 @@ app.delete("/admin/requests/:id", (req, res) => {
     });
 });
 
-/**
- * ANALYTICS (Admin)
- */
 app.get("/admin/analytics", (req, res) => {
     const queries = {
         totalPosts:       "SELECT COUNT(*) as count FROM post",
@@ -736,5 +750,4 @@ app.get("/admin/analytics", (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`CE Connect Backend running on port ${PORT}`);
-    console.log(`EmailJS Service ID: ${EMAILJS_SERVICE_ID}`);
 });
